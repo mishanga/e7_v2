@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "author": "Mikhail Troshev",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "wokwi-arduino-uno", "id": "uno", "top": -66.6, "left": 9, "attrs": {} },
+    {
+      "type": "wokwi-lcd1602",
+      "id": "lcd1",
+      "top": -195.2,
+      "left": 322.4,
+      "attrs": { "pins": "i2c", "i2cAddress": "0x3F" }
+    },
+    { "type": "wokwi-ds1307", "id": "rtc1", "top": 129, "left": 403.3, "attrs": {} },
+    {
+      "type": "wokwi-max7219-matrix",
+      "id": "matrix1",
+      "top": -172.2,
+      "left": 32.61,
+      "attrs": { "chain": "1", "layout": "fc16" }
+    }
+  ],
+  "connections": [
+    [ "lcd1:SDA", "uno:A4", "white", [ "h-19.2", "v278.6", "h-52.2" ] ],
+    [ "lcd1:SCL", "uno:A5", "green", [ "h-9.6", "v307.5", "h-52.3" ] ],
+    [ "lcd1:VCC", "uno:5V", "red", [ "h-38.4", "v307.3", "h-119" ] ],
+    [ "rtc1:SDA", "uno:A4", "white", [ "v-0.3", "h-105.6", "v-28.8", "h-52.2" ] ],
+    [ "rtc1:5V", "uno:5V", "red", [ "h-57.6", "v-0.4", "h-186.2" ] ],
+    [ "matrix1:DIN", "uno:8", "white", [ "h0" ] ],
+    [ "matrix1:CS", "uno:9", "blue", [ "h0" ] ],
+    [ "matrix1:CLK", "uno:10", "green", [ "h0" ] ],
+    [ "rtc1:GND", "uno:GND.2", "black", [ "h-134.4", "v0", "h-99.9" ] ],
+    [ "uno:GND.2", "lcd1:GND", "black", [ "v19.1", "h119.1", "v-115.2" ] ],
+    [ "matrix1:GND", "uno:GND.1", "black", [ "h9.6", "v67.2", "h-29.1" ] ],
+    [ "matrix1:V+", "lcd1:VCC", "red", [ "h0" ] ],
+    [ "uno:A5", "rtc1:SCL", "green", [ "v0" ] ]
+  ],
+  "dependencies": {}
+}
