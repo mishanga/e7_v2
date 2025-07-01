@@ -12,6 +12,7 @@ char dateFormat[] = "DDMM";
 char timeFormat[] = "hhmm";
 
 LedControl lc = LedControl(8, 10, 9, 1);  // DIN, CLK, CS, num | layout: fc16
+LedControl lc2 = LedControl(7, 5, 6, 4);  // DIN, CLK, CS, num | layout: default
 LiquidCrystal_I2C lcd(0x3F, 16, 2);       // custom I2C address
 RTC_DS3231 rtc;                           // in real project using DS3231 instead of DS1307
 
@@ -22,6 +23,7 @@ uint32_t lastSetStateChange = 0;
 uint8_t viewState = 0;
 
 uint8_t matrix[8] = { 60, 66, 165, 129, 165, 153, 66, 60 };  // ☺
+uint8_t matrix2[4][11];
 
 struct Symbol {
   char letter;
@@ -45,15 +47,27 @@ const Symbol symbolMaps[] = {
 };
 
 void printMatrix() {
-  for (uint8_t i = 0; i < 8; i++) {
-    lc.setRow(0, i, matrix[i]);
+  for (uint8_t row = 0; row < 8; row++) {
+    lc.setRow(0, row, matrix[row]);
   }
 }
 
-void printDataToLcd(const char c[6]) {
+void printMatrix2() {
+  for (uint8_t seg = 0; seg < 4; seg++) {
+    for (uint8_t row = 0; row < 8; row++) {
+      lc2.setRow((3 - seg), row, matrix2[seg][row]);
+    }
+  }
+}
+
+void printDataToLcd(const char c[5], bool d) {
   lcd.setCursor(5, 1);
   lcd.print('[');
-  lcd.print(c);
+  lcd.print(c[0]);
+  lcd.print(c[1]);
+  lcd.print(d ? '.' : ' ');
+  lcd.print(c[2]);
+  lcd.print(c[3]);
   lcd.print(']');
 }
 
@@ -104,29 +118,70 @@ void setSymbol(const char c, const uint8_t p) {
   }
 }
 
-void setMatrix(char c[6]) {
-  setSymbol(c[0], 0);
-  setSymbol(c[1], 1);
-  setSymbol(c[3], 2);
-  setSymbol(c[4], 3);
+void setSymbol2(const char c, const uint8_t seg) {
+  const uint8_t dg[3] = { 0, 0, 0 };  // default glyph is 000
+  const uint8_t *g = dg;
+  const uint8_t colMask[3] = { 96, 28, 3 };
 
-  if (c[2] == '.') {
+  for (const auto &s : symbolMaps) {
+    if (s.letter == c) {
+      g = s.glyph;
+      break;
+    }
+  }
+
+  for (uint8_t row = 0; row < 11; row++) {
+    matrix2[seg][row] = 0;
+  }
+
+  for (uint8_t col = 0; col < 3; col++) {
+    const uint8_t gMask = g[col] << (3 - col);
+
+    for (uint8_t row = 0; row < 5; row++) {
+      const uint8_t bit = (1 << (7 - col)) & (gMask << row);
+      if (bit) {
+        matrix2[seg][row * 2] |= colMask[col];
+        matrix2[seg][row * 2 + 1] |= colMask[col];
+      }
+    }
+  }
+  matrix2[seg][10] = matrix2[seg][9];
+  matrix2[seg][8] = matrix2[seg][7];
+}
+
+void setMatrix(const char c[5], bool d) {
+  for (uint8_t i = 0; i < 4; i++) {
+    setSymbol(c[i], i);
+  }
+
+  if (d) {
     matrix[3] |= (1 << 4);  // Устанавливаем бит
   } else {
     matrix[3] &= ~(1 << 4);  // Сбрасываем бит
   }
 }
 
-void printDataToMatrix(char c[6]) {
-  setMatrix(c);
+void setMatrix2(const char c[5], bool d) {
+  for (uint8_t seg = 0; seg < 4; seg++) {
+    setSymbol2(c[seg], seg);
+  }
+  // TODO: if (d)
+}
+
+void printDataToMatrix(const char c[5], bool d) {
+  setMatrix(c, d);
   printMatrix();
 }
 
-void showData(const char i[5], bool d) {
-  char o[6];
-  snprintf(o, 6, "%c%c%c%c%c", i[0], i[1], d ? '.' : ' ', i[2], i[3]);
-  printDataToLcd(o);
-  printDataToMatrix(o);
+void printDataToMatrix2(const char c[5], bool d) {
+  setMatrix2(c, d);
+  printMatrix2();
+}
+
+void showData(const char c[5], bool d) {
+  printDataToLcd(c, d);
+  printDataToMatrix(c, d);
+  printDataToMatrix2(c, d);
 }
 
 void showTime() {
@@ -181,8 +236,6 @@ void updateClockView() {
   }
 }
 
-
-
 void setup() {
   lcd.begin(16, 2);
   rtc.begin();
@@ -196,7 +249,12 @@ void setup() {
   lc.setIntensity(0, 10);
   lc.clearDisplay(0);
 
+  lc2.shutdown(0, false);
+  lc2.setIntensity(0, 10);
+  lc2.clearDisplay(0);
+
   printMatrix();
+  printMatrix2();
 }
 
 void loop() {
