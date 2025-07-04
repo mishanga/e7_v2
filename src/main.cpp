@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <EncButton.h>
 #include <LedControl.h>
 #include <LiquidCrystal_I2C.h>
 #include <RTClib.h>
@@ -6,21 +7,32 @@
 #define showTimeDelay 10000
 #define showDateDelay 3000
 #define showTempDelay 3000
-
+#define modeDelay 10000
 char fullDateFormat[] = "DD.MM.YYYY hh:mm:ss";
 char dateFormat[] = "DDMM";
 char timeFormat[] = "hhmm";
+
+#define MAX_AV_LEVEL 600
+#define MIN_AV_LEVEL 300
+#define MAX_INTENSITY 10
+#define MIN_INTENSITY 1
+#define LDR_PIN A7
+const uint16_t INTENSITY_STEP = round((MAX_AV_LEVEL - MIN_AV_LEVEL) / (MAX_INTENSITY - MIN_INTENSITY));
 
 LedControl lc = LedControl(8, 10, 9, 1);  // DIN, CLK, CS, num | layout: fc16
 LedControl lc2 = LedControl(7, 5, 6, 4);  // DIN, CLK, CS, num | layout: default
 LiquidCrystal_I2C lcd(0x3F, 16, 2);       // custom I2C address
 RTC_DS3231 rtc;                           // in real project using DS3231 instead of DS1307
+Button btnMode(A0);
+Button btnMinus(A1);
+Button btnPlus(A2);
 
 DateTime rtcNow;
 uint32_t curMillis = 0;
 uint32_t lastViewStateChange = 0;
-uint32_t lastSetStateChange = 0;
+uint32_t lastModeStateChange = 0;
 uint8_t viewState = 0;
+uint8_t modeState = 0;
 
 uint8_t matrix[8] = { 60, 66, 165, 129, 165, 153, 66, 60 };  // ☺
 uint8_t matrix2[4][11];
@@ -58,17 +70,6 @@ void printMatrix2() {
       lc2.setRow((3 - seg), row, matrix2[seg][row]);
     }
   }
-}
-
-void printDataToLcd(const char c[5], bool d) {
-  lcd.setCursor(5, 1);
-  lcd.print('[');
-  lcd.print(c[0]);
-  lcd.print(c[1]);
-  lcd.print(d ? '.' : ' ');
-  lcd.print(c[2]);
-  lcd.print(c[3]);
-  lcd.print(']');
 }
 
 void setSymbol(const char c, const uint8_t p) {
@@ -178,10 +179,27 @@ void printDataToMatrix2(const char c[5], bool d) {
   printMatrix2();
 }
 
+void printDataToLcd(const char c[5], bool d) {
+  lcd.setCursor(6, 1);
+  lcd.print(c[0]);
+  lcd.print(c[1]);
+  lcd.print(":");
+  lcd.print(c[2]);
+  lcd.print(c[3]);
+}
+
 void showData(const char c[5], bool d) {
-  printDataToLcd(c, d);
+  if (!modeState) {
+    printDataToLcd(c, d);
+  }
   printDataToMatrix(c, d);
   printDataToMatrix2(c, d);
+}
+
+void printFullTime() {
+  lcd.setCursor(0, 0);
+  rtcNow = rtc.now();
+  lcd.print(rtcNow.toString(fullDateFormat));
 }
 
 void showTime() {
@@ -210,12 +228,16 @@ void showWeather() {
 }
 
 void updateClockView() {
+  if (lastViewStateChange > curMillis) {
+    lastViewStateChange = curMillis;
+  }
+
   switch (viewState % 3) {
     case 0:
-      showTime();
       if (lastViewStateChange + showTimeDelay < curMillis) {
         viewState++;
         lastViewStateChange = curMillis;
+        printFullTime();
         showDate();
       }
       break;
@@ -223,6 +245,7 @@ void updateClockView() {
       if (lastViewStateChange + showDateDelay < curMillis) {
         viewState++;
         lastViewStateChange = curMillis;
+        printFullTime();
         showWeather();
       }
       break;
@@ -230,37 +253,95 @@ void updateClockView() {
       if (lastViewStateChange + showTempDelay < curMillis) {
         viewState++;
         lastViewStateChange = curMillis;
+        printFullTime();
         showTime();
       }
       break;
   }
 }
 
+void updateClockMode() {
+  btnMode.tick();
+  btnMinus.tick();
+  btnPlus.tick();
+
+  if (btnMode.press()) {
+    modeState++;
+    lastModeStateChange = curMillis;
+    lcd.backlight();
+    lcd.setCursor(0, 1);
+    lcd.print("                ");  // faster than lcd.clear()
+    printFullTime();
+
+    switch (modeState % 6) {
+      case 0:
+        modeState++;
+      case 1:
+        lcd.setCursor(14, 1);
+        lcd.print("^^");
+        break;
+      case 2:
+        lcd.setCursor(11, 1);
+        lcd.print("^^");
+        break;
+      case 3:
+        lcd.setCursor(6, 1);
+        lcd.print("^^^^");
+        break;
+      case 4:
+        lcd.setCursor(3, 1);
+        lcd.print("^^");
+        break;
+      case 5:
+        lcd.setCursor(0, 1);
+        lcd.print("^^");
+        break;
+    }
+  }
+
+  if (modeState) {
+    if (lastModeStateChange + modeDelay < curMillis || lastModeStateChange > curMillis) {
+      modeState = 0;
+      lcd.noBacklight();
+      lcd.setCursor(0, 1);
+      lcd.print("                ");  // faster than lcd.clear()
+    }
+  }
+}
+
+void updateIntensity() {
+  uint16_t analogValue = min(max(analogRead(LDR_PIN), MIN_AV_LEVEL), MAX_AV_LEVEL);
+  uint8_t intensityLevel = MAX_INTENSITY - round((analogValue - MIN_AV_LEVEL) / INTENSITY_STEP);
+
+  lcd.setCursor(-1, 1);
+  lcd.print((100 + intensityLevel));
+
+  lc.setIntensity(0, intensityLevel);
+  lc2.setIntensity(0, intensityLevel);
+}
+
 void setup() {
   lcd.begin(16, 2);
   rtc.begin();
 
-  rtcNow = rtc.now();
-  lcd.backlight();
-  lcd.setCursor(0, 0);
-  lcd.print(rtcNow.toString(fullDateFormat));
+  pinMode(LDR_PIN, INPUT);
 
-  lc.shutdown(0, false);
-  lc.setIntensity(0, 10);
+  lc.setIntensity(0, 1);
   lc.clearDisplay(0);
 
-  lc2.shutdown(0, false);
-  lc2.setIntensity(0, 10);
+  lc2.setIntensity(0, 1);
   lc2.clearDisplay(0);
 
-  printMatrix();
-  printMatrix2();
+  printFullTime();
+  showTime();
 }
 
 void loop() {
   curMillis = millis();
 
   updateClockView();
+  updateClockMode();
+  updateIntensity();
 
-  delay(100);
+  delay(20);
 }

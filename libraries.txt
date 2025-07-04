@@ -1,6 +1,7 @@
 # Wokwi Library List
 # See https://docs.wokwi.com/guides/libraries
 
+EncButton
 LedControl
 LiquidCrystal I2C
 RTClib
